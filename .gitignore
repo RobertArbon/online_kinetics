@@ -4,7 +4,7 @@ data/
 workspace.code-workspace
 *.png
 .micromamba
-ygpdv/logs
+examples/ygpdv/logs
 *.db
 *.h5
 
