@@ -1,12 +1,12 @@
 # Project specific
 data/
 *.npz
-workspace.code-workspace
 *.png
 .micromamba
 examples/ygpdv/logs
 *.db
 *.h5
+.idea
 
 
 # Byte-compiled / optimized / DLL files
