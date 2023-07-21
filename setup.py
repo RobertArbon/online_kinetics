@@ -12,7 +12,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        "addict",
         "click",
         "devtools",
         "mdtraj",
@@ -24,7 +23,10 @@ setuptools.setup(
         "pandas",
         "tables",
         "matplotlib",
-        "pydash"
+        "pydash",
+        "rich",
+        "torch",
+        "pytest"
     ],
 
     python_requires=">=3.8",
