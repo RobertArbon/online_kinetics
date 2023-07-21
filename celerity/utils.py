@@ -33,9 +33,7 @@ def get_logger(logger_name: str, file_name: str = None,
     logger.addHandler(c_handler)
     if file_name is not None:
         f_handler = logging.FileHandler(file_name)
-        f_handler.setLevel(logging.ERROR)
-
-        # Create formatters and add it to handlers
+        f_handler.setLevel(logging.DEBUG)
         f_format = logging.Formatter(format)
         f_handler.setFormatter(f_format)
         logger.addHandler(f_handler)
