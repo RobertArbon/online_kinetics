@@ -10,8 +10,6 @@ import glob
 import h5py
 from addict import Dict as Adict
 import pydash as pyd
-from devtools import debug
-
 
 
 def loader(path: str, idx: int = None):
@@ -55,29 +53,6 @@ class MappableDatasetMixin(ABC):
         pass
 
 
-<<<<<<< HEAD
-# class StreamingTrajectory():
-#     def __init__(self, options):
-#
-#         self.trajectory_paths = options['trajectories']
-#
-#     def get_n_frame(self, i_traj: int) -> int:
-#         with h5py.File(self.trajectory_paths[i_traj], 'r') as f:
-#             return f['coordinates'].shape[0]
-#
-#     def get_frame_traj(self, i_frame_traj: Tuple[int, int]) -> mdtraj.Trajectory:
-#         return mdtraj.load_frame(self.trajectory_paths[i_frame_traj[1]], index=i_frame_traj[0])
-#
-#     def __len__(self):
-#         pass
-#
-#     @abstractmethod
-#     def __getitem__(self):
-#         pass
-
-
-=======
->>>>>>> f21080441e0b7598d17f09616eb7e2e1e229e862
 class StreamingTrajectory():
     def __init__(self, options):
         
@@ -89,7 +64,6 @@ class StreamingTrajectory():
     
     def get_frame_traj(self, i_frame_traj: Tuple[int, int]) -> mdtraj.Trajectory: 
         return mdtraj.load_frame(self.trajectory_paths[i_frame_traj[1]], index=i_frame_traj[0])
-
 
 
 class TrajectoryDataset(Dataset, MappableDatasetMixin):
@@ -163,7 +137,6 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
             pos_t = self.trajectory_stream.get_frame_traj((t_ix, traj_ix))
 
         return pos_t
-
 
 
 class TimeLaggedDataset(Dataset, MappableDatasetMixin):

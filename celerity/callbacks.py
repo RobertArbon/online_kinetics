@@ -1,6 +1,5 @@
 from typing import *
 
-from devtools import debug
 
 class LossLogger(object):
     """Callback to write out into tensorboard
