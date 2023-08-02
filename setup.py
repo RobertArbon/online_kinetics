@@ -11,9 +11,11 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=[
-
-    ],
-
-    python_requires=">=3.8",
+    install_requires=[],
+    entry_points={
+        'console_scripts': [
+            'celerity = celerity.api:cli',
+        ],
+    },
+    python_requires=">=3.10",
 )
