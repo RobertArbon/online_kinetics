@@ -2,7 +2,9 @@ from typing import Callable, List, Any, Union, Tuple, Dict
 from abc import ABC, abstractclassmethod, abstractmethod
 import collections
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+from deeptime.util.types import to_dataset
+
 import torch
 import mdtraj
 import numpy as np
@@ -10,6 +12,18 @@ import glob
 import h5py
 from addict import Dict as Adict
 import pydash as pyd
+
+
+def dataloaders_in_memory(data: List[np.ndarray],
+                          validation_split: float = 0.3,
+                          lag_time: int = 1,
+                          batch_size: int = 1000) -> Tuple[DataLoader, DataLoader]:
+    dataset = to_dataset(data=data, lagtime=lag_time)
+    n_val = int(len(dataset) * validation_split)
+    train_data, val_data = torch.utils.data.random_split(dataset, [len(dataset) - n_val, n_val])
+    loader_train = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    loader_val = DataLoader(val_data, batch_size=len(val_data), shuffle=False)
+    return loader_train, loader_val
 
 
 def loader(path: str, idx: int = None):
@@ -188,7 +202,6 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
                 available_frames.append(int(n_frames//self.stride) - self.lag_time)
         self.cum_available_frames = np.cumsum(available_frames)
 
-
     def get_trajectory_paths(self) -> List[str]:
         traj_paths = sorted(glob.glob(self.options.traj_paths_pattern))
         if len(traj_paths) == 0:
@@ -297,7 +310,7 @@ class DataLoader(torch.utils.data.DataLoader, LoaderMixin):
         timeout=0,
         worker_init_fn=None,
         multiprocessing_context=None,
-        transform = None
+        transform=None
     )
 
     def __init__(self, options: Dict[str, Any]) -> None:

@@ -12,21 +12,7 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
-        "click",
-        "devtools",
-        "mdtraj",
-        "numpy",
-        "deeptime",
-        "h5py",
-        "mdshare",
-        "pretty-errors",
-        "pandas",
-        "tables",
-        "matplotlib",
-        "pydash",
-        "rich",
-        "torch",
-        "pytest"
+
     ],
 
     python_requires=">=3.8",
