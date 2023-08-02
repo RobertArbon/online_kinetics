@@ -109,4 +109,7 @@ def alanine_dipeptide_features(feature: str, n_trajectories: int = 1, n_frames: 
         except (KeyError, FileNotFoundError, IndexError):
             logger.exception(f"Couldn't load alanine-dipeptide feature array", exc_info=True)
             return trajs
+
+    if cossin and (feature == 'dihedrals'):
+        np.savez(output_dir / features[feature], *trajs)
     return trajs
