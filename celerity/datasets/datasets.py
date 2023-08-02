@@ -103,7 +103,7 @@ def alanine_dipeptide_features(feature: str, n_trajectories: int = 1, n_frames: 
     for i in range(n_trajectories):
         try:
             traj = numpy.load(file)[f'arr_{i}']
-            if cossin and (feature == 'dihdrals'):
+            if cossin and (feature == 'dihedrals'):
                 traj = np.concatenate((np.sin(traj), np.cos(traj)), axis=1)
             trajs.append(traj[:n_frames, ...])
         except (KeyError, FileNotFoundError, IndexError):
