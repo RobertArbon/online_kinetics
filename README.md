@@ -40,6 +40,7 @@ pip install -qe .
 ```
 
 ### Pip
+Create a virtual environment your favourite way and then: 
 ```
 pip install -r requirements.txt
 pip install -qe . 

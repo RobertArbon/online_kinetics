@@ -1,16 +1,18 @@
 channels:
   - conda-forge
+  - defaults
+  - pytorch
 dependencies:
-  - addict==2.4.0
-  - click==8.1.6
-  - deeptime==0.4.4
-  - h5py==3.9.0
-  - mdshare==0.4.2
-  - mdtraj==1.9.9
-  - numpy==1.25.2
-  - pydash==7.0.6
-  - pytest==7.4.0
-  - setuptools==68.0.0
-  - tg.devtools==2.4.3
-  - torch==2.0.1
-  - tqdm==4.65.0
+  - addict
+  - click
+  - deeptime
+  - h5py
+  - mdshare
+  - mdtraj
+  - numpy
+  - pydash
+  - pytest
+  - setuptools
+  - pytorch
+  - tqdm
+  - jupyterlab
