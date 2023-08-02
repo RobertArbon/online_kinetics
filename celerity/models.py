@@ -11,26 +11,30 @@ from deeptime.decomposition.deep import vampnet_loss
 from tqdm import tqdm_notebook as tqdm 
 import numpy as np
 
+from celerity.utils import get_logger
+
+logger = get_logger(__name__)
+
 
 class ConfigMixin(ABC):
 
-    DEFAULT = Adict()
+    DEFAULT = dict()
 
     @classmethod
     def get_options(cls, options={}):
-        combined_options = Adict(cls.get_default_options())
-        combined_options.update(Adict(options))
+        combined_options = dict(cls.get_default_options())
+        combined_options.update(dict(options))
         # combined_options.version = __version__
-        combined_options.runner = cls.__name__
+        combined_options['runner'] = cls.__name__
         return combined_options
 
     @classmethod
     def get_default_options(cls) -> Dict:
-        return Adict(cls.DEFAULT)
+        return dict(cls.DEFAULT)
 
 
 class VAMPnetEstimator(nn.Module, ConfigMixin):
-    DEFAULT = Adict(
+    DEFAULT = dict(
         n_hidden_layers=1,
         hidden_layer_width=10,
         output_dim=1,
@@ -39,43 +43,47 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
         lag_time=1,
         lr=5e-4,
         n_epochs=30,
-        optimizer=torch.optim.Adam, 
-        score=Adict(
+        optimizer='Adam',
+        score=dict(
               method='VAMP2', 
               mode='regularize', 
               epsilon=1e-6
         ), 
-        loss=vampnet_loss,
         device="cpu"
     )
 
     def __init__(self, options): 
         super(VAMPnetEstimator, self).__init__()
         self.options = self.get_options(options)
+        optimizer_name = self.options['optimizer']
+        try:
+            self.options['optimizer'] = getattr(torch.optim, optimizer_name)
+        except AttributeError:
+            logger.exception(f"Couldn't load optimizer {optimizer_name}", exc_info=True)
 
         self.t_0 = self.create_lobe()
         self.t_tau = self.t_0 
-        self.optimizer = self.options.optimizer(self.parameters(), lr=self.options.lr)
-        if self.options.scheduler is None: 
-            self.scheduler = self.options.scheduler(self.optimizer, **self.options.scheduler_kwargs)
+        self.optimizer = self.options['optimizer'](self.parameters(), lr=self.options['lr'])
+        if self.options['scheduler'] is not None:
+            self.scheduler = self.options['scheduler'](self.optimizer, **self.options['scheduler_kwargs'])
         else: 
             self.scheduler = None
 
-        self.device = torch.device(self.options.device)
+        self.device = torch.device(self.options['device'])
         self.to(self.device)
         
         self.step = 0
         self.dict_scores = dict({
-            "train": {self.options.score.method: {}, "loss": {}},
-            "validate": {self.options.score.method: {}, "loss": {}},
+            "train": {self.options['score']['method']: {}, "loss": {}},
+            "validate": {self.options['score']['method']: {}, "loss": {}},
             })
 
     def create_lobe(self):
 
-        dim_inp = self.options.input_dim
-        width = self.options.hidden_layer_width
-        dim_out = self.options.output_dim
-        n_layers = self.options.n_hidden_layers
+        dim_inp = self.options['input_dim']
+        width = self.options['hidden_layer_width']
+        dim_out = self.options['output_dim']
+        n_layers = self.options['n_hidden_layers']
         lobe = []
         # Input layers
         if n_layers > 1:
@@ -91,7 +99,7 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
 
         # Output layer
         lobe.append(nn.Linear(width, dim_out))
-        if self.options.output_softmax:
+        if self.options['output_softmax']:
             lobe.append(nn.Softmax(dim=1))
         lobe = nn.Sequential(*lobe)
         return lobe
@@ -107,7 +115,7 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
         if record_interval is None:
             record_interval = n_batches - 1
 
-        for epoch_ix in range(self.options.n_epochs):
+        for epoch_ix in range(self.options['n_epochs']):
         # for epoch_ix in tqdm(range(self.options.n_epochs), desc='Epoch', total=self.options.n_epochs):
             self.train()
             for batch_ix, batch in enumerate(train_loader):
@@ -123,8 +131,8 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
 
     def score_batch(self, x):
         x0, xt = x[0].to(self.device), x[1].to(self.device)
-        output = self((x0, xt)) # calls the forward method
-        loss = self.options.loss(output[0], output[1], **self.options.score)
+        output = self((x0, xt))  # calls the forward method
+        loss = vampnet_loss(output[0], output[1], **self.options['score'])
         return loss
 
     def train_batch(self,x, callbacks): 
@@ -133,7 +141,7 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
         loss.backward()
         self.optimizer.step()
         loss_value = loss.item()
-        self.dict_scores['train'][self.options.score.method][self.step] = -loss_value
+        self.dict_scores['train'][self.options['score']['method']][self.step] = -loss_value
         self.dict_scores['train']['loss'][self.step] = loss_value
         if callbacks is not None:
             for callback in callbacks: 
@@ -148,7 +156,7 @@ class VAMPnetEstimator(nn.Module, ConfigMixin):
                 losses.append(val_loss)
             mean_score = -torch.mean(torch.stack(losses)).item()   
 
-        self.dict_scores['validate'][self.options.score.method][self.step] = mean_score
+        self.dict_scores['validate'][self.options['score']['method']][self.step] = mean_score
         self.dict_scores['validate']['loss'][self.step] = -mean_score
         if callbacks is not None:
             for callback in callbacks: 
@@ -341,6 +349,14 @@ class HedgeVAMPNetEstimator(nn.Module):
 
     def partial_fit(self, X: List[torch.Tensor]) -> None:
         self.update_weights(X)
+
+
+estimator_by_type = dict(
+    batch=VAMPnetEstimator,
+    online=HedgeVAMPNetEstimator
+)
+
+
 
 
 # class HedgeVAMPNetEstimator(nn.Module):
