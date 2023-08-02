@@ -12,3 +12,4 @@ tg.devtools==2.4.3
 torch==2.0.1
 tqdm==4.65.0
 jupyterlab
+rich
