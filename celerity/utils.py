@@ -1,8 +1,10 @@
 """
 Some general utility functions.
 """
+from typing import Any
+from pathlib import Path
 import logging
-import sys
+import yaml
 
 
 def get_logger(logger_name: str, file_name: str = None,
@@ -39,3 +41,14 @@ def get_logger(logger_name: str, file_name: str = None,
         logger.addHandler(f_handler)
     logger.propagate = False
     return logger
+
+
+def dump_yaml(obj: Any, file: str):
+    with Path(file).open('w') as f:
+        yaml.dump(obj, f)
+
+
+def load_yaml(file: str) -> Any:
+    with Path(file).open('r') as f:
+        obj = yaml.load(f, Loader=yaml.FullLoader)
+    return obj
