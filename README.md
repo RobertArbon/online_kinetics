@@ -19,12 +19,12 @@ There are tentative plans to use the self-expanding neural networks of [Mitchel 
 
 ## Repo guide
 
-`celerity` - a package for training (online and batch)  VAMPnet models of molecular kinetics. 
-`data` - dataset are stored here. 
-`docs` - WIP - the documentation files go here. 
-`models` - trained and serialized models. 
-`notebooks` - analysis of models and data. 
-`tests` - unit and integration tests
+- `celerity` - a package for training (online and batch)  VAMPnet models of molecular kinetics. 
+- `data` - dataset are stored here. 
+- `docs` - WIP - the documentation files go here. 
+- `models` - trained and serialized models. 
+- `notebooks` - analysis of models and data. 
+- `tests` - unit and integration tests
 
 
 ## Installation
