@@ -1,5 +1,7 @@
 # Online Kinetics
 
+WIP - please use with care. 
+
 Online kinetics trains a deep kinetic models of biomolecular simulations (using the [`VAMPnets`](https://www.nature.com/articles/s41467-017-02388-1) 
 using [`Deeptime`](https://deeptime-ml.github.io/latest/index.html) package as inspiration) in an *online* manner: 
 i.e., using 1 epoch of training. 
