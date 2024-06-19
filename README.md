@@ -46,4 +46,3 @@ pip install -r requirements.txt
 pip install -qe . 
 ```
 
-## Usage
