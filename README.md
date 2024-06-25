@@ -6,6 +6,7 @@ Online kinetics trains a deep kinetic models of biomolecular simulations (using 
 using [`Deeptime`](https://deeptime-ml.github.io/latest/index.html) package as inspiration) in an *online* manner: 
 i.e., using 1 epoch of training. 
 
+I gave a presentation on this at ScotChem in 2022, you can view the slides [here](https://github.com/RobertArbon/online_kinetics/blob/main/docs/presentation/ScotChem.pdf)
 
 The motivation for this idea is that unbiased simulations used to create kinetic models can be quite large and potentially
 prohibitively expensive to train, especially in automated adaptive sampling methods (e.g., [Casalino et. al.](https://journals.sagepub.com/doi/full/10.1177/10943420211006452))
