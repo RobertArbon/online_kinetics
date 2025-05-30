@@ -9,6 +9,7 @@ examples/ygpdv/logs
 .DS_Store
 archive
 Pip*
+*.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
