@@ -8,6 +8,7 @@ examples/ygpdv/logs
 .idea
 .DS_Store
 archive
+Pip*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
