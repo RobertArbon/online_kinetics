@@ -30,8 +30,6 @@ class VAMPnetEstimator(nn.Module):
         score_method: str = "VAMP2",
         score_mode: str = "regularize",
         score_epsilon: float = 1e-6,
-        scheduler: str = None,
-        scheduler_kwargs: Dict = {},
     ):
         super().__init__()
         
@@ -65,18 +63,6 @@ class VAMPnetEstimator(nn.Module):
         except AttributeError:
             logger.exception(f"Couldn't load optimizer {optimizer}", exc_info=True)
             raise
-
-        # Setup scheduler if specified
-        if scheduler is not None:
-            import torch.optim.lr_scheduler as sched
-            try:
-                scheduler_class = getattr(sched, scheduler)
-                self.scheduler = scheduler_class(self.optimizer, **scheduler_kwargs)
-            except AttributeError:
-                logger.exception(f"Couldn't load scheduler {scheduler}", exc_info=True)
-                raise
-        else:
-            self.scheduler = None
 
         # Move model to device
         self.to(self.device)
@@ -281,7 +267,6 @@ class HedgeVAMPNetEstimator(nn.Module):
         pred_0_per_layer = self.lobe(x_0)
         pred_tau_per_layer = self.lobe(x_tau)
         return (pred_0_per_layer, pred_tau_per_layer)
-
 
     def score_batch(self, x: List[torch.Tensor]) -> torch.Tensor:
         """Calculate the score for a batch.
