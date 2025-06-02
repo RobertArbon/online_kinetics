@@ -15,13 +15,23 @@ def cli():
 
 
 @cli.command()
-@click.option('--data_dir', default='data/processed', type=click.Path(file_okay=False, dir_okay=True),
-              help='Directory to download data to.')
-@click.argument('dataset', default='alanine-dipeptide-distances', type=click.Choice([
-    'alanine-dipeptide-positions',
-    'alanine-dipeptide-distances',
-    'alanine-dipeptide-dihedrals',
-]))
+@click.option(
+    "--data_dir",
+    default="data/processed",
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Directory to download data to.",
+)
+@click.argument(
+    "dataset",
+    default="alanine-dipeptide-distances",
+    type=click.Choice(
+        [
+            "alanine-dipeptide-positions",
+            "alanine-dipeptide-distances",
+            "alanine-dipeptide-dihedrals",
+        ]
+    ),
+)
 def datasets(data_dir, dataset):
     """
     Download a dataset.
@@ -32,11 +42,12 @@ def datasets(data_dir, dataset):
 
 
 @cli.command()
-@click.argument('npz_dataset_path', type=click.Path(file_okay=True, dir_okay=False, exists=True))
-@click.argument('estimator_type',  type=click.Choice([
-    'online',
-    'batch'
-]), default='batch')
+@click.argument(
+    "npz_dataset_path", type=click.Path(file_okay=True, dir_okay=False, exists=True)
+)
+@click.argument(
+    "estimator_type", type=click.Choice(["online", "batch"]), default="batch"
+)
 def configure_training(npz_dataset_path, estimator_type):
     """
     Create a training configuration file.
@@ -44,18 +55,17 @@ def configure_training(npz_dataset_path, estimator_type):
     estimator_type: type of
     """
     params = estimator_by_type[estimator_type].get_options()
-    params['npz_dataset_path'] = npz_dataset_path
-    params['estimator_type'] = estimator_type
-    dump_yaml(params, 'config.yaml')
+    params["npz_dataset_path"] = npz_dataset_path
+    params["estimator_type"] = estimator_type
+    dump_yaml(params, "config.yaml")
 
 
 @cli.command()
-@click.argument('config_path', type=click.Path(file_okay=True, dir_okay=False, exists=True))
+@click.argument(
+    "config_path", type=click.Path(file_okay=True, dir_okay=False, exists=True)
+)
 def train(config_path):
     params = load_yaml(config_path)
     pprint(params)
-    est = estimator_by_type[params['estimator_type']]
+    est = estimator_by_type[params["estimator_type"]]
     est.fit()
-
-
-

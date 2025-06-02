@@ -14,13 +14,17 @@ from addict import Dict as Adict
 import pydash as pyd
 
 
-def dataloaders_in_memory(data: List[np.ndarray],
-                          validation_split: float = 0.3,
-                          lag_time: int = 1,
-                          batch_size: int = 1000) -> Tuple[DataLoader, DataLoader]:
+def dataloaders_in_memory(
+    data: List[np.ndarray],
+    validation_split: float = 0.3,
+    lag_time: int = 1,
+    batch_size: int = 1000,
+) -> Tuple[DataLoader, DataLoader]:
     dataset = to_dataset(data=data, lagtime=lag_time)
     n_val = int(len(dataset) * validation_split)
-    train_data, val_data = torch.utils.data.random_split(dataset, [len(dataset) - n_val, n_val])
+    train_data, val_data = torch.utils.data.random_split(
+        dataset, [len(dataset) - n_val, n_val]
+    )
     loader_train = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     loader_val = DataLoader(val_data, batch_size=len(val_data), shuffle=False)
     return loader_train, loader_val
@@ -38,7 +42,7 @@ class MappableDatasetMixin(ABC):
 
     @abstractmethod
     def __init__(self, options=None):
-        print('in abstract init')
+        print("in abstract init")
         if options is None:
             options = {}
         self.options = self.get_options(options)
@@ -67,23 +71,25 @@ class MappableDatasetMixin(ABC):
         pass
 
 
-class StreamingTrajectory():
+class StreamingTrajectory:
     def __init__(self, options):
-        
-        self.trajectory_paths = options['trajectories']
+
+        self.trajectory_paths = options["trajectories"]
 
     def get_n_frame(self, i_traj: int) -> int:
-        with h5py.File(self.trajectory_paths[i_traj], 'r') as f: 
-            return f['coordinates'].shape[0]
-    
-    def get_frame_traj(self, i_frame_traj: Tuple[int, int]) -> mdtraj.Trajectory: 
-        return mdtraj.load_frame(self.trajectory_paths[i_frame_traj[1]], index=i_frame_traj[0])
+        with h5py.File(self.trajectory_paths[i_traj], "r") as f:
+            return f["coordinates"].shape[0]
+
+    def get_frame_traj(self, i_frame_traj: Tuple[int, int]) -> mdtraj.Trajectory:
+        return mdtraj.load_frame(
+            self.trajectory_paths[i_frame_traj[1]], index=i_frame_traj[0]
+        )
 
 
 class TrajectoryDataset(Dataset, MappableDatasetMixin):
 
     DEFAULT = Adict(
-        traj_paths_pattern='*.h5',
+        traj_paths_pattern="*.h5",
         stride=1,
         in_memory=False,
     )
@@ -97,7 +103,7 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
         self.stride = self.options.stride
         # Data about dataset
         self.trajs: List[np.ndarray] = None
-        self.trajectory_stream:  None
+        self.trajectory_stream: None
         self.cum_available_frames: np.ndarray = None
 
         # NOTE striding is done on loading. But this means fetching a frame is different for in memory/from disk.
@@ -106,7 +112,9 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
             trajs = [mdtraj.load(traj_path) for traj_path in self.traj_paths]
             self.trajs = trajs
         else:
-            self.trajectory_stream = StreamingTrajectory(dict(trajectories=self.traj_paths, atom_mask='protein'))
+            self.trajectory_stream = StreamingTrajectory(
+                dict(trajectories=self.traj_paths, atom_mask="protein")
+            )
 
         self.calculate_available_frames()
 
@@ -122,14 +130,15 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
                 available_frames.append(n_frames)
             else:
                 n_frames = self.trajectory_stream.get_n_frame(i)
-                available_frames.append(int(n_frames//self.stride))
+                available_frames.append(int(n_frames // self.stride))
         self.cum_available_frames = np.cumsum(available_frames)
-
 
     def get_trajectory_paths(self) -> List[str]:
         traj_paths = sorted(glob.glob(self.options.traj_paths_pattern))
         if len(traj_paths) == 0:
-            raise ValueError(f"No trajectories found using {self.options.traj_paths_pattern}")
+            raise ValueError(
+                f"No trajectories found using {self.options.traj_paths_pattern}"
+            )
         return traj_paths
 
     def __len__(self):
@@ -147,7 +156,7 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
             t_ix = int(frame_ix)
             pos_t = self.trajs[traj_ix][t_ix]
         else:
-            t_ix = int(frame_ix*self.stride)
+            t_ix = int(frame_ix * self.stride)
             pos_t = self.trajectory_stream.get_frame_traj((t_ix, traj_ix))
 
         return pos_t
@@ -156,7 +165,7 @@ class TrajectoryDataset(Dataset, MappableDatasetMixin):
 class TimeLaggedDataset(Dataset, MappableDatasetMixin):
 
     DEFAULT = Adict(
-        traj_paths_pattern='*.h5',
+        traj_paths_pattern="*.h5",
         lag_time=1,
         stride=1,
         in_memory=False,
@@ -173,7 +182,7 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
         self.stride = self.options.stride
         # Data about dataset
         self.trajs: List[np.ndarray] = None
-        self.trajectory_stream:  None
+        self.trajectory_stream: None
         self.cum_available_frames: np.ndarray = None
 
         # NOTE striding is done on loading. But this means fetching a frame is different for in memory/from disk.
@@ -182,7 +191,9 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
             trajs = [mdtraj.load(traj_path) for traj_path in self.traj_paths]
             self.trajs = trajs
         else:
-            self.trajectory_stream = StreamingTrajectory(dict(trajectories=self.traj_paths, atom_mask='protein'))
+            self.trajectory_stream = StreamingTrajectory(
+                dict(trajectories=self.traj_paths, atom_mask="protein")
+            )
 
         # self.calculate_output_dimension()
         self.calculate_available_frames()
@@ -199,13 +210,15 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
                 available_frames.append(n_frames - self.lag_time)
             else:
                 n_frames = self.trajectory_stream.get_n_frame(i)
-                available_frames.append(int(n_frames//self.stride) - self.lag_time)
+                available_frames.append(int(n_frames // self.stride) - self.lag_time)
         self.cum_available_frames = np.cumsum(available_frames)
 
     def get_trajectory_paths(self) -> List[str]:
         traj_paths = sorted(glob.glob(self.options.traj_paths_pattern))
         if len(traj_paths) == 0:
-            raise ValueError(f"No trajectories found using {self.options.traj_paths_pattern}")
+            raise ValueError(
+                f"No trajectories found using {self.options.traj_paths_pattern}"
+            )
         return traj_paths
 
     def __len__(self):
@@ -225,8 +238,8 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
             pos_t = self.trajs[traj_ix][t_ix]
             pos_tau = self.trajs[traj_ix][tau_ix]
         else:
-            t_ix = int(frame_ix*self.stride)
-            tau_ix = int((frame_ix + self.lag_time)*self.stride)
+            t_ix = int(frame_ix * self.stride)
+            tau_ix = int((frame_ix + self.lag_time) * self.stride)
             pos_t = self.trajectory_stream.get_frame_traj((t_ix, traj_ix))
             pos_tau = self.trajectory_stream.get_frame_traj((tau_ix, traj_ix))
 
@@ -234,18 +247,28 @@ class TimeLaggedDataset(Dataset, MappableDatasetMixin):
 
 
 def isnumpy(elem: List[Any]) -> bool:
-    return isinstance(elem, collections.abc.Iterable) and type(elem).__module__ == 'numpy'
+    return (
+        isinstance(elem, collections.abc.Iterable) and type(elem).__module__ == "numpy"
+    )
 
 
 def istensor(elem: List[Any]) -> bool:
-    return isinstance(elem, collections.abc.Iterable) and type(elem).__module__ == 'torch'
+    return (
+        isinstance(elem, collections.abc.Iterable) and type(elem).__module__ == "torch"
+    )
 
 
-def collate_mdtraj(batch: List[Any], md_transform: Callable[[mdtraj.Trajectory], np.ndarray], output: str = 'numpy') -> Union[Tuple[np.ndarray], np.ndarray]:
-    if output == 'tensor':
+def collate_mdtraj(
+    batch: List[Any],
+    md_transform: Callable[[mdtraj.Trajectory], np.ndarray],
+    output: str = "numpy",
+) -> Union[Tuple[np.ndarray], np.ndarray]:
+    if output == "tensor":
+
         def transform(x):
             return torch.Tensor(md_transform(x))
-    elif output == 'numpy': 
+
+    elif output == "numpy":
         transform = md_transform
 
     # Batch will have length 'batch_size'
@@ -254,7 +277,12 @@ def collate_mdtraj(batch: List[Any], md_transform: Callable[[mdtraj.Trajectory],
     if isinstance(elem, tuple):
 
         if isinstance(elem[0], mdtraj.Trajectory):
-            return tuple([transform(mdtraj.join([x[i] for x in batch])) for i in range(len(elem))])
+            return tuple(
+                [
+                    transform(mdtraj.join([x[i] for x in batch]))
+                    for i in range(len(elem))
+                ]
+            )
         else:
             raise ValueError(f"Unknown tuple element type {type(elem[0])}")
 
@@ -262,7 +290,7 @@ def collate_mdtraj(batch: List[Any], md_transform: Callable[[mdtraj.Trajectory],
     elif isinstance(elem, mdtraj.Trajectory):
         return transform(mdtraj.join(batch))
     else:
-        raise ValueError(f'Unknown batch element type: {type(elem)}')
+        raise ValueError(f"Unknown batch element type: {type(elem)}")
 
 
 class LoaderMixin(ABC):
@@ -281,7 +309,7 @@ class LoaderMixin(ABC):
             options = {}
         combined_options = Adict(cls.get_default_options())
         combined_options.update(Adict(options))
-        combined_options.version = ''
+        combined_options.version = ""
         combined_options.feature = cls.__name__
         return combined_options
 
@@ -296,11 +324,12 @@ class DataLoader(torch.utils.data.DataLoader, LoaderMixin):
     Used to make some of the options more user-friendly and
     define custom samplers.
     """
+
     DEFAULT = Adict(
         dataset=None,
         batch_size=1,
         shuffle=False,
-        output='numpy',
+        output="numpy",
         sampler=None,
         batch_sampler=None,
         num_workers=0,
@@ -310,23 +339,22 @@ class DataLoader(torch.utils.data.DataLoader, LoaderMixin):
         timeout=0,
         worker_init_fn=None,
         multiprocessing_context=None,
-        transform=None
+        transform=None,
     )
 
     def __init__(self, options: Dict[str, Any]) -> None:
         self.options = self.get_options(options)
         # parse output options
 
-        def f(batch): 
+        def f(batch):
             return collate_mdtraj(batch, self.options.transform, self.options.output)
 
-        self.options.collate_fn = f 
+        self.options.collate_fn = f
 
         # Setup args, kwargs for pytorch
         kwargs = pyd.clone(self.options)
-        for opt in ['output', 'version', 'feature', 'transform']:
+        for opt in ["output", "version", "feature", "transform"]:
             _ = kwargs.pop(opt)
-        dataset = kwargs.pop('dataset')
+        dataset = kwargs.pop("dataset")
 
         super().__init__(dataset, **kwargs)
-

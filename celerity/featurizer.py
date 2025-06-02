@@ -57,28 +57,34 @@ class FeaturizerMixin(ABC):
 
 class Dihedrals(FeaturizerMixin):
     DEFAULT = Adict(
-        topology_path='topology.h5',
-        which=['phi', 'psi'],
+        topology_path="topology.h5",
+        which=["phi", "psi"],
         dihedral_ixs=None,
         residue_ixs=None,
         cossin=True,
         periodic=True,
-        opt=True
+        opt=True,
     )
 
     def __init__(self, options):
         self.options = self.get_options(options)
         self.topology = md.load(self.options.topology_path).top
         self.dihedral_ixs = self.get_indices()
-        self.n_features = self.dihedral_ixs.shape[0] * 2 if self.options.cossin else self.dihedral_ixs.shape[0]
+        self.n_features = (
+            self.dihedral_ixs.shape[0] * 2
+            if self.options.cossin
+            else self.dihedral_ixs.shape[0]
+        )
         self.features, self.labels = self.get_features_labels()
 
     def get_features_labels(self):
         if self.options.cossin:
-            features = list(np.repeat(['cos-dihedral', 'sin-dihedral'], self.n_features/2))
+            features = list(
+                np.repeat(["cos-dihedral", "sin-dihedral"], self.n_features / 2)
+            )
             labels = np.tile(self.dihedral_ixs, (2, 1))
         else:
-            features = list(np.repeat(['dihedral'], self.n_features))
+            features = list(np.repeat(["dihedral"], self.n_features))
             labels = self.dihedral_ixs
         labels = ["{}-{}-{}-{}".format(*label) for label in labels]
         return features, labels
@@ -101,7 +107,12 @@ class Dihedrals(FeaturizerMixin):
                 sele_indices = []
                 for ind_dih in indices:
                     is_in_selection = np.any(
-                        [self.topology.atom(x).residue.index in self.options.selection for x in ind_dih])
+                        [
+                            self.topology.atom(x).residue.index
+                            in self.options.selection
+                            for x in ind_dih
+                        ]
+                    )
                     if is_in_selection:
                         sele_indices.append(ind_dih.reshape(1, -1))
                 sele_indices = np.concatenate(sele_indices, axis=0)
@@ -114,8 +125,12 @@ class Dihedrals(FeaturizerMixin):
         return sele_indices
 
     def __call__(self, frame: md.Trajectory):
-        vals = md.compute_dihedrals(frame, indices=self.dihedral_ixs, periodic=self.options.periodic,
-                                    opt=self.options.opt)
+        vals = md.compute_dihedrals(
+            frame,
+            indices=self.dihedral_ixs,
+            periodic=self.options.periodic,
+            opt=self.options.opt,
+        )
         if self.options.cossin:
             vals = np.concatenate([np.cos(vals), np.sin(vals)], axis=1)
         if vals.ndim == 1:
@@ -129,8 +144,8 @@ class Contacts(FeaturizerMixin):
         contacts_ix=None,
         periodic=True,
         scheme=None,
-        topology_path='topology.h5', 
-        offset = 2 
+        topology_path="topology.h5",
+        offset=2,
     )
 
     def __init__(self, options):
@@ -139,13 +154,17 @@ class Contacts(FeaturizerMixin):
         self.features, self.labels = self.get_features_labels()
 
     def get_features_labels(self):
-        features = ['contacts']*len(self.options.contacts_ix)
-        labels = [f"{x}-{y}" for x, y in zip(self.options.contacts_ix[:, 0], self.options.contacts_ix[:, 1])]
+        features = ["contacts"] * len(self.options.contacts_ix)
+        labels = [
+            f"{x}-{y}"
+            for x, y in zip(
+                self.options.contacts_ix[:, 0], self.options.contacts_ix[:, 1]
+            )
+        ]
         return features, labels
 
-    def __repr__(self): 
+    def __repr__(self):
         return f"{self.options}"
-
 
     def get_contacts_ix(self) -> Union[np.ndarray, str]:
         residues_ix = self.options.residues_ix
@@ -153,7 +172,13 @@ class Contacts(FeaturizerMixin):
             top = md.load(self.options.topology_path).top
             residues_ix = [x.index for x in top.residues]
 
-        contacts_ix = np.array([x for x in combinations(residues_ix, 2) if x[1] > x[0] + self.options.offset])
+        contacts_ix = np.array(
+            [
+                x
+                for x in combinations(residues_ix, 2)
+                if x[1] > x[0] + self.options.offset
+            ]
+        )
 
         return contacts_ix
 
@@ -192,19 +217,19 @@ class Contacts(FeaturizerMixin):
 #
 #         return xyz
 #     #
-    # @classmethod
-    # @abstractmethod
-    # def get_inputs(cls, options) -> [str]:
-    #     return []
-    #
-    # @classmethod
-    # @abstractmethod
-    # def get_outputs(cls, options) -> [str]:
-    #     return []
-    #
-    # @abstractmethod
-    # def run(self):
-    #     pas
+# @classmethod
+# @abstractmethod
+# def get_inputs(cls, options) -> [str]:
+#     return []
+#
+# @classmethod
+# @abstractmethod
+# def get_outputs(cls, options) -> [str]:
+#     return []
+#
+# @abstractmethod
+# def run(self):
+#     pas
 
 #
 # METHODS = ["dihedrals", "contacts", "positions"]

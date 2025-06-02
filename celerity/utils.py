@@ -1,14 +1,18 @@
 """
 Some general utility functions.
 """
+
 from typing import Any
 from pathlib import Path
 import logging
 import yaml
 
 
-def get_logger(logger_name: str, file_name: str = None,
-               format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s') -> logging.Logger:
+def get_logger(
+    logger_name: str,
+    file_name: str = None,
+    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+) -> logging.Logger:
     """
     Returns a logger.
 
@@ -44,11 +48,11 @@ def get_logger(logger_name: str, file_name: str = None,
 
 
 def dump_yaml(obj: Any, file: str):
-    with Path(file).open('w') as f:
+    with Path(file).open("w") as f:
         yaml.dump(obj, f)
 
 
 def load_yaml(file: str) -> Any:
-    with Path(file).open('r') as f:
+    with Path(file).open("r") as f:
         obj = yaml.load(f, Loader=yaml.FullLoader)
     return obj
