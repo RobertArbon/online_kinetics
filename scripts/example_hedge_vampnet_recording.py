@@ -142,7 +142,7 @@ def example_with_fit_method():
         n=3*(5e-3),
         s=0.1,
         device="cuda" if torch.cuda.is_available() else "cpu",
-        n_epochs=5  # Multiple epochs for this example
+        n_epochs=1  # Multiple epochs for this example
     )
 
     # Prepare data
@@ -183,10 +183,10 @@ def example_with_fit_method():
 
 
 if __name__ == "__main__":
-    print("Running manual training loop example...")
-    main()
+    # print("Running manual training loop example...")
+    # main()
     
-    print("\n" + "="*50 + "\n")
+    # print("\n" + "="*50 + "\n")
     
     print("Running fit() method example...")
     example_with_fit_method()
