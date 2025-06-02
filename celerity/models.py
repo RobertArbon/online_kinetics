@@ -13,6 +13,7 @@ import numpy as np
 
 from celerity.utils import get_logger
 from celerity.layers import Lobe
+from celerity.optimizers import HedgeOptimizer
 
 logger = get_logger(__name__)
 
@@ -216,6 +217,8 @@ class HedgeVAMPNetEstimator(nn.Module):
             requires_grad=False,
         ).to(self.device)
 
+        self.optimizer = HedgeOptimizer(self)
+
         # Output accumulators
         self.loss_array = []
         self.alpha_array = []
@@ -277,47 +280,9 @@ class HedgeVAMPNetEstimator(nn.Module):
         else:
             return self.alpha.numpy()
 
-    def update_weights(self, X: List[torch.Tensor]) -> None:
-        predictions_per_layer = self.forward(X)
-        losses_per_layer = self.loss_per_layer(predictions_per_layer)
-
-        w = [None] * len(losses_per_layer)
-        b = [None] * len(losses_per_layer)
-
-        with torch.no_grad():
-            for i in range(len(losses_per_layer)):
-
-                losses_per_layer[i].backward(retain_graph=True)
-                self.lobe.output_layers[i].weight.data -= (
-                    self.n * self.alpha[i] * self.lobe.output_layers[i].weight.grad.data
-                )
-                self.lobe.output_layers[i].bias.data -= (
-                    self.n * self.alpha[i] * self.lobe.output_layers[i].bias.grad.data
-                )
-
-                for j in range(i + 1):
-                    if w[j] is None:
-                        w[j] = self.alpha[i] * self.lobe.hidden_layers[j].weight.grad.data
-                        b[j] = self.alpha[i] * self.lobe.hidden_layers[j].bias.grad.data
-                    else:
-                        w[j] += self.alpha[i] * self.lobe.hidden_layers[j].weight.grad.data
-                        b[j] += self.alpha[i] * self.lobe.hidden_layers[j].bias.grad.data
-
-                self.zero_grad()
-
-            for i in range(len(losses_per_layer)):
-                self.lobe.hidden_layers[i].weight.data -= self.n * w[i]
-                self.lobe.hidden_layers[i].bias.data -= self.n * b[i]
-
-            for i in range(len(losses_per_layer)):
-                self.alpha[i] *= torch.pow(self.b, losses_per_layer[i])
-                self.alpha[i] = torch.max(self.alpha[i], self.s / self.n_hidden_layers)
-
-        z_t = torch.sum(self.alpha)
-        self.alpha = Parameter(self.alpha / z_t, requires_grad=False).to(self.device)
 
     def partial_fit(self, X: List[torch.Tensor]) -> None:
-        self.update_weights(X)
+        self.optimizer.step(X)
 
     def score_batch(self, x):
         # Similar to predict, but return tensor

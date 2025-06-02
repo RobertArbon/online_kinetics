@@ -183,10 +183,10 @@ def example_with_fit_method():
 
 
 if __name__ == "__main__":
-    # print("Running manual training loop example...")
-    # main()
+    print("Running manual training loop example...")
+    main()
     
     # print("\n" + "="*50 + "\n")
     
-    print("Running fit() method example...")
-    example_with_fit_method()
+    # print("Running fit() method example...")
+    # example_with_fit_method()

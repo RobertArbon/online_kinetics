@@ -37,3 +37,5 @@ vscodevim.vim@1.30.1
 yzhang.markdown-all-in-one@3.6.3
 
 Create a new type of block/lobe (groups of FC layers, activations, optional softmax). I should be able to use the same class in both HEdgeVAMPNetEstimator and VAMPNetEstimator.  Put this in a new submodule called 'layers'.  
+
+Create a new optimizer class which mimics the use of HedgeVAMPNetsEstimator.update_weights. It should be able to be used in a similar way to 'Adam' or any other PyTorch optimizer.
