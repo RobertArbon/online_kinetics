@@ -12,6 +12,7 @@ from tqdm import tqdm_notebook as tqdm
 import numpy as np
 
 from celerity.utils import get_logger
+from celerity.layers import Lobe
 
 logger = get_logger(__name__)
 
@@ -75,34 +76,17 @@ class VAMPnetEstimator(nn.Module):
         )
 
     def create_lobe(self):
-
-        dim_inp = self.input_dim
-        width = self.hidden_layer_width
-        dim_out = self.output_dim
-        n_layers = self.n_hidden_layers
-        lobe = []
-        # Input layers
-        if n_layers > 1:
-            lobe.append(nn.Linear(dim_inp, width))
-            lobe.append(nn.ELU())
-
-            for _ in range(n_layers - 1):
-                lobe.append(nn.Linear(width, width))
-                lobe.append(nn.ELU())
-        else:
-            lobe.append(nn.Linear(dim_inp, width))
-            lobe.append(nn.ELU())
-
-        # Output layer
-        lobe.append(nn.Linear(width, dim_out))
-        if self.output_softmax:
-            lobe.append(nn.Softmax(dim=1))
-        lobe = nn.Sequential(*lobe)
-        return lobe
+        return Lobe(
+            self.input_dim,
+            self.output_dim,
+            self.n_hidden_layers,
+            self.hidden_layer_width,
+            self.output_softmax,
+        )
 
     def forward(self, x):
-        x_0 = self.t_0(x[0])
-        x_t = self.t_tau(x[1])
+        x_0 = self.t_0(x[0])[-1]
+        x_t = self.t_tau(x[1])[-1]
         return (x_0, x_t)
 
     def fit(
@@ -213,19 +197,14 @@ class HedgeVAMPNetEstimator(nn.Module):
         self.output_softmax = output_softmax
 
         # Setup layers
-        hidden_layers = []
         self.n_hidden_layers = n_hidden_layers
-        hidden_layers.append(nn.Linear(input_dim, hidden_layer_width))
-        for i in range(self.n_hidden_layers - 1):
-            hidden_layers.append(nn.Linear(hidden_layer_width, hidden_layer_width))
-
-        output_layers = []
-        for i in range(self.n_hidden_layers):  # connects to hidden layers
-            hidden_layer_width = hidden_layers[i].out_features
-            output_layers.append(nn.Linear(hidden_layer_width, output_dim))
-
-        self.hidden_t_0 = nn.ModuleList(hidden_layers).to(self.device)
-        self.output_t_0 = nn.ModuleList(output_layers).to(self.device)
+        self.lobe = Lobe(
+            input_dim,
+            output_dim,
+            n_hidden_layers,
+            hidden_layer_width,
+            output_softmax,
+        ).to(self.device)
 
         # Other training parameters
         self.b = Parameter(torch.tensor(b), requires_grad=False).to(self.device)
@@ -251,41 +230,18 @@ class HedgeVAMPNetEstimator(nn.Module):
             }
         )
 
-    def partial_forward(
-        self, hidden_module: nn.Module, output_module: nn.Module, x: torch.Tensor
-    ) -> List[torch.Tensor]:
-        hidden_connections = []
-        X = x.to(self.device)
-        # X = torch.reshape(X, (self.batch_size, -1))
-        # push forward through main network
-
-        hidden_connections.append(F.elu(hidden_module[0](X)))
-        for i in range(1, self.n_hidden_layers):
-            tmp = hidden_module[i](hidden_connections[i - 1])
-            hidden_connections.append(F.elu(tmp))
-
-        # push through outputs
-        predictions_per_layer = []
-        for i in range(self.n_hidden_layers):
-            tmp = output_module[i](hidden_connections[i])
-            if self.output_softmax:
-                predictions_per_layer.append(F.softmax(tmp, dim=1))
-            else:
-                predictions_per_layer.append(tmp)
-
-        return predictions_per_layer
+    def partial_forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+        return self.lobe(x)
 
     def zero_grad(self):
         for i in range(self.n_hidden_layers):
-            self.hidden_t_0[i].zero_grad()
-            self.output_t_0[i].zero_grad()
+            self.lobe.hidden_layers[i].zero_grad()
+            self.lobe.output_layers[i].zero_grad()
 
     def forward(self, x: List[torch.Tensor]) -> Tuple[List[torch.Tensor]]:
         x_0, x_tau = x[0], x[1]
-        pred_0_per_layer = self.partial_forward(self.hidden_t_0, self.output_t_0, x_0)
-        pred_tau_per_layer = self.partial_forward(
-            self.hidden_t_0, self.output_t_0, x_tau
-        )
+        pred_0_per_layer = self.partial_forward(x_0)
+        pred_tau_per_layer = self.partial_forward(x_tau)
         return (pred_0_per_layer, pred_tau_per_layer)
 
     def loss_per_layer(
@@ -332,26 +288,26 @@ class HedgeVAMPNetEstimator(nn.Module):
             for i in range(len(losses_per_layer)):
 
                 losses_per_layer[i].backward(retain_graph=True)
-                self.output_t_0[i].weight.data -= (
-                    self.n * self.alpha[i] * self.output_t_0[i].weight.grad.data
+                self.lobe.output_layers[i].weight.data -= (
+                    self.n * self.alpha[i] * self.lobe.output_layers[i].weight.grad.data
                 )
-                self.output_t_0[i].bias.data -= (
-                    self.n * self.alpha[i] * self.output_t_0[i].bias.grad.data
+                self.lobe.output_layers[i].bias.data -= (
+                    self.n * self.alpha[i] * self.lobe.output_layers[i].bias.grad.data
                 )
 
                 for j in range(i + 1):
                     if w[j] is None:
-                        w[j] = self.alpha[i] * self.hidden_t_0[j].weight.grad.data
-                        b[j] = self.alpha[i] * self.hidden_t_0[j].bias.grad.data
+                        w[j] = self.alpha[i] * self.lobe.hidden_layers[j].weight.grad.data
+                        b[j] = self.alpha[i] * self.lobe.hidden_layers[j].bias.grad.data
                     else:
-                        w[j] += self.alpha[i] * self.hidden_t_0[j].weight.grad.data
-                        b[j] += self.alpha[i] * self.hidden_t_0[j].bias.grad.data
+                        w[j] += self.alpha[i] * self.lobe.hidden_layers[j].weight.grad.data
+                        b[j] += self.alpha[i] * self.lobe.hidden_layers[j].bias.grad.data
 
                 self.zero_grad()
 
             for i in range(len(losses_per_layer)):
-                self.hidden_t_0[i].weight.data -= self.n * w[i]
-                self.hidden_t_0[i].bias.data -= self.n * b[i]
+                self.lobe.hidden_layers[i].weight.data -= self.n * w[i]
+                self.lobe.hidden_layers[i].bias.data -= self.n * b[i]
 
             for i in range(len(losses_per_layer)):
                 self.alpha[i] *= torch.pow(self.b, losses_per_layer[i])

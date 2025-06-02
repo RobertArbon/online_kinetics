@@ -141,4 +141,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .micromamba/pkgs/*
-_task_stuff.md
+_extensions.txt
