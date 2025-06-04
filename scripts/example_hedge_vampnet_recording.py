@@ -37,10 +37,10 @@ def main():
         output_dim=6,
         n_hidden_layers=2,
         hidden_layer_width=100, 
-        loss=partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6), 
-        b=0.98,  # beta, expert update rate
-        n=3*(5e-3),  # eta, learning rate
-        s=0.1,  # minimum expert weight
+        loss_function=partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6), 
+        hedge_beta=0.98,  # beta, expert update rate
+        hedge_eta=3*(5e-3),  # eta, learning rate
+        hedge_gamma=0.1,  # minimum expert weight
         device="cuda" if torch.cuda.is_available() else "cpu",
         n_epochs=1  # Set to 1 for online learning
     )
@@ -70,7 +70,7 @@ def main():
     
     for i, x in enumerate(loader_train):
         est.train()
-        est.partial_fit(x)
+        est.train_batch(x)
 
         if i % record_interval == 0:
             print(f"Step {i}/{len(loader_train)} ({i/len(loader_train)*100:.1f}%)")
@@ -79,13 +79,17 @@ def main():
             alpha_recorder(i, {})
             
             # Record training score
-            train_scores.append(-est.predict(x))
+            with torch.no_grad():
+                train_loss = est.score_batch(x)
+                train_scores.append(-train_loss.item())
             
             # Record validation score and predictions by layer
             est.eval()
             tmp = []
             for val in loader_val:
-                tmp.append(-est.predict(val))
+                with torch.no_grad():
+                    val_loss = est.score_batch(val)
+                    tmp.append(-val_loss.item())
             test_scores.append(np.mean(tmp))
             test_times.append((i+1) * batch_size)
             
@@ -137,10 +141,10 @@ def example_with_fit_method():
         output_dim=6,
         n_hidden_layers=2,
         hidden_layer_width=100, 
-        loss=partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6), 
-        b=0.98,
-        n=3*(5e-3),
-        s=0.1,
+        loss_function=partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6), 
+        hedge_beta=0.98,
+        hedge_eta=3*(5e-3),
+        hedge_gamma=0.1,
         device="cuda" if torch.cuda.is_available() else "cpu",
         n_epochs=1  # Multiple epochs for this example
     )
