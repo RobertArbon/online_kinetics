@@ -32,8 +32,5 @@ dependencies = [
     "rich",
 ]
 
-[project.scripts]
-celerity = "celerity.api:cli"
-
 [tool.setuptools]
 packages = ["celerity"]
