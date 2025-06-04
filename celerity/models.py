@@ -203,7 +203,7 @@ class StandardVAMPNetEstimator(BaseVAMPNetEstimator):
         output_softmax: bool = False,
         device: str = "cpu",
         learning_rate: float = 5e-4,
-        n_epochs: int = 30,
+        n_epochs: int = 1,
         optimizer_name: str = "Adam",
         score_method: str = "VAMP2",
         score_mode: str = "regularize",
