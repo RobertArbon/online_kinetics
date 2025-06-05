@@ -58,8 +58,8 @@ def main():
     est = HedgeVAMPNetEstimator(**nn_config)
 
     # Initialize callbacks
-    alpha_recorder = AlphaRecorder(est)
-    predictions_recorder = PredictionsByLayerRecorder(est, data_tensors)
+    # alpha_recorder = AlphaRecorder(est)
+    # predictions_recorder = PredictionsByLayerRecorder(est, data_tensors)
 
     # Manual training loop with recording (similar to notebook example)
     test_scores = []
@@ -76,7 +76,7 @@ def main():
             print(f"Step {i}/{len(loader_train)} ({i/len(loader_train)*100:.1f}%)")
             
             # Record alphas during training
-            alpha_recorder(i, {})
+            # alpha_recorder(i, {})
             
             # Record training score
             with torch.no_grad():
@@ -94,7 +94,7 @@ def main():
             test_times.append((i+1) * batch_size)
             
             # Record predictions by layer during validation
-            predictions_recorder(i, {})
+            # predictions_recorder(i, {})
 
     print("Training completed!")
 
@@ -172,8 +172,8 @@ def example_with_fit_method():
         train_loader=loader_train,
         validate_loader=loader_val,
         record_interval=10,
-        train_callbacks=[alpha_recorder],
-        validate_callbacks=[predictions_recorder]
+        # train_callbacks=[alpha_recorder],
+        # validate_callbacks=[predictions_recorder]
     )
 
     print("Training completed!")
