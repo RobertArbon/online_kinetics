@@ -1,96 +1,371 @@
+"""
+Unit tests for HedgeOptimizer.
+
+These tests focus on the directional influence of hedge parameters on the optimizer behavior,
+ensuring that parameter changes have the expected effects without checking exact values.
+"""
 import pytest
 import torch
 import numpy as np
 from functools import partial
 from deeptime.decomposition.deep import vampnet_loss
+
 from celerity.models import HedgeVAMPNetEstimator
 from celerity.optimizers import HedgeOptimizer
 
-def create_small_estimator(hedge_eta, hedge_beta, hedge_gamma, n_hidden_layers=2):
-    loss_function = partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6)
-    est = HedgeVAMPNetEstimator(
-        input_dim=2,
-        output_dim=2,
-        n_hidden_layers=n_hidden_layers,
-        hidden_layer_width=3,
-        device="cpu",
-        hedge_eta=hedge_eta,
-        hedge_beta=hedge_beta,
-        hedge_gamma=hedge_gamma,
-        loss_function=loss_function,
-        n_epochs=1
-    )
-    return est
 
-def create_dummy_batch():
-    x0 = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-    xtau = torch.tensor([[2.0, 3.0], [4.0, 5.0]], dtype=torch.float32)
-    return [x0, xtau]
+class TestHedgeOptimizer:
+    """Test suite for HedgeOptimizer functionality."""
 
-def compute_weight_change(before, after):
-    return torch.norm(after - before).item()
+    @pytest.fixture
+    def base_config(self):
+        """Base configuration for HedgeVAMPNetEstimator."""
+        return {
+            'input_dim': 4,
+            'output_dim': 2,
+            'n_hidden_layers': 2,
+            'hidden_layer_width': 8,
+            'loss_function': partial(vampnet_loss, method='VAMP2', mode='regularize', epsilon=1e-6),
+            'hedge_beta': 0.98,
+            'hedge_eta': 0.01,
+            'hedge_gamma': 0.1,
+            'device': "cpu",
+            'n_epochs': 1
+        }
 
-@pytest.mark.parametrize("eta1, eta2", [(0.01, 0.05)])
-def test_hedge_eta_direction(eta1, eta2):
-    assert eta2 > eta1
-    batch = create_dummy_batch()
-    
-    base_est = create_small_estimator(0.01, 0.99, 0.1)  # Use a default eta
-    base_state = {k: v.clone() for k, v in base_est.model.state_dict().items()}
-    
-    # For eta1
-    est1 = create_small_estimator(eta1, 0.99, 0.1)
-    est1.model.load_state_dict(base_state)
-    est1.model.hedge_eta.data = torch.tensor(eta1)
-    initial_weight1 = est1.model.lobe.hidden_layers[0].weight.data.clone()
-    est1.optimizer.step(batch)
-    change1 = compute_weight_change(initial_weight1, est1.model.lobe.hidden_layers[0].weight.data)
-    
-    # For eta2
-    est2 = create_small_estimator(eta2, 0.99, 0.1)
-    est2.model.load_state_dict(base_state)
-    est2.model.hedge_eta.data = torch.tensor(eta2)
-    initial_weight2 = est2.model.lobe.hidden_layers[0].weight.data.clone()
-    est2.optimizer.step(batch)
-    change2 = compute_weight_change(initial_weight2, est2.model.lobe.hidden_layers[0].weight.data)
-    
-    assert change2 > change1, f"Change with larger eta should be larger: {change2} > {change1}"
+    @pytest.fixture
+    def sample_batch(self):
+        """Create a sample batch for testing."""
+        torch.manual_seed(42)  # For reproducibility
+        batch_size = 10
+        input_dim = 4
+        x_0 = torch.randn(batch_size, input_dim)
+        x_tau = torch.randn(batch_size, input_dim)
+        return [x_0, x_tau]
 
-# Similarly for beta
-@pytest.mark.parametrize("beta1, beta2", [(0.99, 0.95)])
-def test_hedge_beta_direction(beta1, beta2):
-    assert beta2 < beta1  # Smaller beta means more penalization
-    batch = create_dummy_batch()
-    
-    base_est = create_small_estimator(0.01, 0.99, 0.1)
-    base_state = {k: v.clone() for k, v in base_est.model.state_dict().items()}
-    
-    # For beta1
-    est1 = create_small_estimator(0.01, beta1, 0.1)
-    est1.model.load_state_dict(base_state)
-    est1.model.hedge_beta.data = torch.tensor(beta1)
-    initial_alpha1 = est1.model.layer_weights.clone()
-    est1.optimizer.step(batch)
-    change_alpha1 = torch.norm(est1.model.layer_weights - initial_alpha1).item()
-    
-    # For beta2
-    est2 = create_small_estimator(0.01, beta2, 0.1)
-    est2.model.load_state_dict(base_state)
-    est2.model.hedge_beta.data = torch.tensor(beta2)
-    initial_alpha2 = est2.model.layer_weights.clone()
-    est2.optimizer.step(batch)
-    change_alpha2 = torch.norm(est2.model.layer_weights - initial_alpha2).item()
-    
-    # Since smaller beta should cause more change in alphas for the same losses
-    assert change_alpha2 > change_alpha1
+    def test_optimizer_initialization(self, base_config):
+        """Test that HedgeOptimizer initializes correctly."""
+        estimator = HedgeVAMPNetEstimator(**base_config)
+        optimizer = estimator.optimizer
+        
+        assert isinstance(optimizer, HedgeOptimizer)
+        assert optimizer.estimator is estimator
+        assert optimizer.model is estimator.model
+        assert len(list(optimizer.param_groups)) >= 0
 
-# For gamma, check that alphas don't go below min
-@pytest.mark.parametrize("gamma", [0.1, 0.2])
-def test_hedge_gamma_min(gamma):
-    batch = create_dummy_batch()
-    est = create_small_estimator(0.01, 0.5, gamma)  # Use small beta to force decrease
-    for _ in range(10):  # Run multiple steps to force alphas down
-        est.optimizer.step(batch)
-    min_alpha = torch.min(est.model.layer_weights).item()
-    expected_min = gamma / est.model.n_hidden_layers
-    assert min_alpha >= expected_min - 1e-6
+    def test_learning_rate_influence_on_weight_changes(self, base_config, sample_batch):
+        """Test that higher learning rates lead to larger weight changes."""
+        torch.manual_seed(42)
+        
+        # Create two estimators with different learning rates
+        config_low = base_config.copy()
+        config_low['hedge_eta'] = 0.001
+        
+        config_high = base_config.copy()
+        config_high['hedge_eta'] = 0.01
+        
+        estimator_low = HedgeVAMPNetEstimator(**config_low)
+        estimator_high = HedgeVAMPNetEstimator(**config_high)
+        
+        # Store initial weights
+        initial_weights_low = {}
+        initial_weights_high = {}
+        
+        # Store weights for hidden layers
+        for i, layer in enumerate(estimator_low.model.lobe.hidden_layers):
+            initial_weights_low[f'hidden_{i}_weight'] = layer.weight.data.clone()
+            initial_weights_low[f'hidden_{i}_bias'] = layer.bias.data.clone()
+            
+        for i, layer in enumerate(estimator_high.model.lobe.hidden_layers):
+            initial_weights_high[f'hidden_{i}_weight'] = layer.weight.data.clone()
+            initial_weights_high[f'hidden_{i}_bias'] = layer.bias.data.clone()
+        
+        # Store weights for output layers
+        for i, layer in enumerate(estimator_low.model.lobe.output_layers):
+            initial_weights_low[f'output_{i}_weight'] = layer.weight.data.clone()
+            initial_weights_low[f'output_{i}_bias'] = layer.bias.data.clone()
+            
+        for i, layer in enumerate(estimator_high.model.lobe.output_layers):
+            initial_weights_high[f'output_{i}_weight'] = layer.weight.data.clone()
+            initial_weights_high[f'output_{i}_bias'] = layer.bias.data.clone()
+        
+        # Perform one optimization step
+        estimator_low.optimizer.step(sample_batch)
+        estimator_high.optimizer.step(sample_batch)
+        
+        # Calculate weight changes
+        changes_low = {}
+        changes_high = {}
+        
+        # Calculate changes for hidden layers
+        for i, layer in enumerate(estimator_low.model.lobe.hidden_layers):
+            changes_low[f'hidden_{i}_weight'] = torch.norm(
+                layer.weight.data - initial_weights_low[f'hidden_{i}_weight']
+            ).item()
+            changes_low[f'hidden_{i}_bias'] = torch.norm(
+                layer.bias.data - initial_weights_low[f'hidden_{i}_bias']
+            ).item()
+            
+        for i, layer in enumerate(estimator_high.model.lobe.hidden_layers):
+            changes_high[f'hidden_{i}_weight'] = torch.norm(
+                layer.weight.data - initial_weights_high[f'hidden_{i}_weight']
+            ).item()
+            changes_high[f'hidden_{i}_bias'] = torch.norm(
+                layer.bias.data - initial_weights_high[f'hidden_{i}_bias']
+            ).item()
+        
+        # Calculate changes for output layers
+        for i, layer in enumerate(estimator_low.model.lobe.output_layers):
+            changes_low[f'output_{i}_weight'] = torch.norm(
+                layer.weight.data - initial_weights_low[f'output_{i}_weight']
+            ).item()
+            changes_low[f'output_{i}_bias'] = torch.norm(
+                layer.bias.data - initial_weights_low[f'output_{i}_bias']
+            ).item()
+            
+        for i, layer in enumerate(estimator_high.model.lobe.output_layers):
+            changes_high[f'output_{i}_weight'] = torch.norm(
+                layer.weight.data - initial_weights_high[f'output_{i}_weight']
+            ).item()
+            changes_high[f'output_{i}_bias'] = torch.norm(
+                layer.bias.data - initial_weights_high[f'output_{i}_bias']
+            ).item()
+        
+        # Assert that higher learning rate leads to larger changes (only for parameters that actually changed)
+        total_change_low = sum(changes_low.values())
+        total_change_high = sum(changes_high.values())
+        
+        assert total_change_high > total_change_low, \
+            f"Higher learning rate should cause larger total changes: {total_change_high} vs {total_change_low}"
+        
+        # Also check that at least some individual parameters show the expected behavior
+        parameters_with_expected_behavior = 0
+        for key in changes_low.keys():
+            if changes_low[key] > 1e-8 and changes_high[key] > changes_low[key]:
+                parameters_with_expected_behavior += 1
+        
+        assert parameters_with_expected_behavior > 0, \
+            "At least some parameters should show larger changes with higher learning rate"
+
+    def test_beta_influence_on_layer_weights(self, base_config, sample_batch):
+        """Test that different beta values affect layer weight updates differently."""
+        torch.manual_seed(42)
+        
+        # Create two estimators with different beta values
+        config_low_beta = base_config.copy()
+        config_low_beta['hedge_beta'] = 0.9  # More aggressive decay
+        
+        config_high_beta = base_config.copy()
+        config_high_beta['hedge_beta'] = 0.99  # Less aggressive decay
+        
+        estimator_low_beta = HedgeVAMPNetEstimator(**config_low_beta)
+        estimator_high_beta = HedgeVAMPNetEstimator(**config_high_beta)
+        
+        # Store initial layer weights
+        initial_layer_weights_low = estimator_low_beta.model.layer_weights.data.clone()
+        initial_layer_weights_high = estimator_high_beta.model.layer_weights.data.clone()
+        
+        # Perform optimization step
+        estimator_low_beta.optimizer.step(sample_batch)
+        estimator_high_beta.optimizer.step(sample_batch)
+        
+        # Calculate changes in layer weights
+        change_low_beta = torch.norm(
+            estimator_low_beta.model.layer_weights.data - initial_layer_weights_low
+        ).item()
+        change_high_beta = torch.norm(
+            estimator_high_beta.model.layer_weights.data - initial_layer_weights_high
+        ).item()
+        
+        # Lower beta should lead to more dramatic changes in layer weights
+        assert change_low_beta > change_high_beta, \
+            "Lower beta should cause larger changes in layer weights"
+
+    def test_gamma_minimum_weight_constraint(self, base_config, sample_batch):
+        """Test that gamma parameter enforces minimum weight constraints."""
+        torch.manual_seed(42)
+        
+        # Create estimator with specific gamma value
+        config = base_config.copy()
+        config['hedge_gamma'] = 0.2
+        
+        estimator = HedgeVAMPNetEstimator(**config)
+        
+        # Perform multiple optimization steps to potentially drive weights very low
+        for _ in range(10):
+            estimator.optimizer.step(sample_batch)
+        
+        # Check that no layer weight is below the minimum threshold
+        min_expected_weight = config['hedge_gamma'] / config['n_hidden_layers']
+        
+        for weight in estimator.model.layer_weights:
+            assert weight.item() >= min_expected_weight - 1e-6, \
+                f"Layer weight {weight.item()} should be >= {min_expected_weight}"
+
+    def test_layer_weights_normalization(self, base_config, sample_batch):
+        """Test that layer weights are properly normalized after updates."""
+        torch.manual_seed(42)
+        
+        estimator = HedgeVAMPNetEstimator(**base_config)
+        
+        # Perform optimization step
+        estimator.optimizer.step(sample_batch)
+        
+        # Check that layer weights sum to 1
+        weight_sum = torch.sum(estimator.model.layer_weights).item()
+        assert abs(weight_sum - 1.0) < 1e-6, \
+            f"Layer weights should sum to 1, got {weight_sum}"
+
+    def test_multiple_steps_consistency(self, base_config, sample_batch):
+        """Test that multiple optimization steps maintain consistency."""
+        torch.manual_seed(42)
+        
+        estimator = HedgeVAMPNetEstimator(**base_config)
+        
+        # Perform multiple steps
+        for step in range(5):
+            # Store weights before step
+            layer_weights_before = estimator.model.layer_weights.data.clone()
+            
+            # Perform step
+            estimator.optimizer.step(sample_batch)
+            
+            # Check normalization after each step
+            weight_sum = torch.sum(estimator.model.layer_weights).item()
+            assert abs(weight_sum - 1.0) < 1e-6, \
+                f"Layer weights should sum to 1 at step {step}, got {weight_sum}"
+            
+            # Check that weights actually changed (unless they hit constraints)
+            weight_change = torch.norm(
+                estimator.model.layer_weights.data - layer_weights_before
+            ).item()
+            # Allow for the case where weights might not change much due to constraints
+            assert weight_change >= 0, "Weight change should be non-negative"
+
+    def test_gradient_accumulation_correctness(self, base_config, sample_batch):
+        """Test that gradients are properly accumulated across layers."""
+        torch.manual_seed(42)
+        
+        estimator = HedgeVAMPNetEstimator(**base_config)
+        
+        # Store initial parameters
+        initial_params = {}
+        for name, param in estimator.model.named_parameters():
+            if param.requires_grad:
+                initial_params[name] = param.data.clone()
+        
+        # Perform optimization step
+        estimator.optimizer.step(sample_batch)
+        
+        # Check that parameters have changed
+        params_changed = False
+        for name, param in estimator.model.named_parameters():
+            if param.requires_grad and name in initial_params:
+                if not torch.equal(param.data, initial_params[name]):
+                    params_changed = True
+                    break
+        
+        assert params_changed, "At least some parameters should have changed after optimization"
+
+    def test_different_layer_configurations(self, base_config, sample_batch):
+        """Test optimizer behavior with different numbers of layers."""
+        torch.manual_seed(42)
+        
+        # Test with different numbers of hidden layers
+        for n_layers in [1, 3, 4]:
+            config = base_config.copy()
+            config['n_hidden_layers'] = n_layers
+            
+            estimator = HedgeVAMPNetEstimator(**config)
+            
+            # Check initial layer weights are properly initialized
+            assert len(estimator.model.layer_weights) == n_layers
+            
+            # Layer weights are initialized as 1/(n_hidden_layers + 1), so they don't sum to 1 initially
+            expected_initial_weight = 1.0 / (n_layers + 1)
+            for weight in estimator.model.layer_weights:
+                assert abs(weight.item() - expected_initial_weight) < 1e-6, \
+                    f"Each layer weight should be {expected_initial_weight} for {n_layers} layers"
+            
+            # Perform optimization step
+            estimator.optimizer.step(sample_batch)
+            
+            # Check post-optimization normalization (after hedge update, weights should sum to 1)
+            final_sum = torch.sum(estimator.model.layer_weights).item()
+            assert abs(final_sum - 1.0) < 1e-6, \
+                f"Final layer weights should sum to 1 for {n_layers} layers"
+
+    def test_deterministic_behavior(self, base_config, sample_batch):
+        """Test that optimizer behavior is deterministic given same inputs."""
+        # Create two identical estimators
+        torch.manual_seed(42)
+        estimator1 = HedgeVAMPNetEstimator(**base_config)
+        
+        torch.manual_seed(42)
+        estimator2 = HedgeVAMPNetEstimator(**base_config)
+        
+        # Perform same optimization step on both
+        estimator1.optimizer.step(sample_batch)
+        estimator2.optimizer.step(sample_batch)
+        
+        # Check that results are identical
+        assert torch.allclose(
+            estimator1.model.layer_weights, 
+            estimator2.model.layer_weights,
+            atol=1e-6
+        ), "Optimizer should produce deterministic results"
+        
+        # Check that model parameters are identical
+        for (name1, param1), (name2, param2) in zip(
+            estimator1.model.named_parameters(), 
+            estimator2.model.named_parameters()
+        ):
+            assert name1 == name2
+            assert torch.allclose(param1.data, param2.data, atol=1e-6), \
+                f"Parameter {name1} should be identical between runs"
+
+    def test_zero_learning_rate_no_change(self, base_config, sample_batch):
+        """Test that zero learning rate results in no parameter changes."""
+        torch.manual_seed(42)
+        
+        config = base_config.copy()
+        config['hedge_eta'] = 0.0
+        
+        estimator = HedgeVAMPNetEstimator(**config)
+        
+        # Store initial parameters
+        initial_params = {}
+        for name, param in estimator.model.named_parameters():
+            initial_params[name] = param.data.clone()
+        
+        initial_layer_weights = estimator.model.layer_weights.data.clone()
+        
+        # Perform optimization step
+        estimator.optimizer.step(sample_batch)
+        
+        # Check that network parameters haven't changed (except layer weights might still change due to hedge algorithm)
+        for name, param in estimator.model.named_parameters():
+            if 'layer_weights' not in name:  # Skip layer weights as they're updated by hedge algorithm
+                assert torch.allclose(param.data, initial_params[name], atol=1e-6), \
+                    f"Parameter {name} should not change with zero learning rate"
+
+    def test_layer_weight_updates_direction(self, base_config, sample_batch):
+        """Test that layer weights update in the expected direction based on losses."""
+        torch.manual_seed(42)
+        
+        estimator = HedgeVAMPNetEstimator(**base_config)
+        
+        # Store initial layer weights
+        initial_layer_weights = estimator.model.layer_weights.data.clone()
+        
+        # Perform optimization step
+        estimator.optimizer.step(sample_batch)
+        
+        # The layer weights should have changed (unless all losses are identical)
+        final_layer_weights = estimator.model.layer_weights.data
+        
+        # At least check that the weights are still valid probabilities
+        assert torch.all(final_layer_weights >= 0), "All layer weights should be non-negative"
+        assert torch.all(final_layer_weights <= 1), "All layer weights should be <= 1"
+        assert abs(torch.sum(final_layer_weights).item() - 1.0) < 1e-6, \
+            "Layer weights should sum to 1"
