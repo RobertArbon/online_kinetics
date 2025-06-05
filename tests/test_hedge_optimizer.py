@@ -181,26 +181,38 @@ class TestHedgeOptimizer:
         assert change_low_beta > change_high_beta, \
             "Lower beta should cause larger changes in layer weights"
 
-    def test_gamma_minimum_weight_constraint(self, base_config, sample_batch):
-        """Test that gamma parameter enforces minimum weight constraints."""
-        torch.manual_seed(42)
-        
-        # Create estimator with specific gamma value
-        config = base_config.copy()
-        config['hedge_gamma'] = 0.2
-        
-        estimator = HedgeVAMPNetEstimator(**config)
-        
-        # Perform multiple optimization steps to potentially drive weights very low
-        for _ in range(10):
-            estimator.optimizer.step(sample_batch)
-        
-        # Check that no layer weight is below the minimum threshold
-        min_expected_weight = config['hedge_gamma'] / config['n_hidden_layers']
-        
-        for weight in estimator.model.layer_weights:
-            assert weight.item() >= min_expected_weight - 1e-6, \
-                f"Layer weight {weight.item()} should be >= {min_expected_weight}"
+def test_gamma_minimum_weight_constraint(self, base_config, sample_batch):
+    """Test that gamma parameter enforces minimum weight constraints by comparing with and without gamma."""
+    torch.manual_seed(42)
+    
+    min_expected_weight = 0.2 / base_config['n_hidden_layers']
+    
+    # Config with gamma > 0
+    config_gamma = base_config.copy()
+    config_gamma['hedge_gamma'] = 0.2
+    config_gamma['hedge_beta'] = 0.9  # To accelerate decay
+    estimator_gamma = HedgeVAMPNetEstimator(**config_gamma)
+    
+    # Config with gamma = 0
+    config_no_gamma = base_config.copy()
+    config_no_gamma['hedge_gamma'] = 0.0
+    config_no_gamma['hedge_beta'] = 0.9
+    estimator_no_gamma = HedgeVAMPNetEstimator(**config_no_gamma)
+    
+    # Perform multiple optimization steps
+    n_steps = 20
+    for _ in range(n_steps):
+        estimator_gamma.optimizer.step(sample_batch)
+        estimator_no_gamma.optimizer.step(sample_batch)
+    
+    # For no gamma, check if at least one weight is below the threshold
+    below_threshold = any(w.item() < min_expected_weight for w in estimator_no_gamma.model.layer_weights)
+    assert below_threshold, "With gamma=0, some weights should fall below the minimum threshold"
+    
+    # For gamma > 0, check all weights are at or above threshold
+    for weight in estimator_gamma.model.layer_weights:
+        assert weight.item() >= min_expected_weight - 1e-6, \
+            f"Layer weight {weight.item()} should be >= {min_expected_weight}"
 
     def test_layer_weights_normalization(self, base_config, sample_batch):
         """Test that layer weights are properly normalized after updates."""
@@ -349,23 +361,33 @@ class TestHedgeOptimizer:
                 assert torch.allclose(param.data, initial_params[name], atol=1e-6), \
                     f"Parameter {name} should not change with zero learning rate"
 
-    def test_layer_weight_updates_direction(self, base_config, sample_batch):
-        """Test that layer weights update in the expected direction based on losses."""
-        torch.manual_seed(42)
-        
-        estimator = HedgeVAMPNetEstimator(**base_config)
-        
-        # Store initial layer weights
-        initial_layer_weights = estimator.model.layer_weights.data.clone()
-        
-        # Perform optimization step
-        estimator.optimizer.step(sample_batch)
-        
-        # The layer weights should have changed (unless all losses are identical)
-        final_layer_weights = estimator.model.layer_weights.data
-        
-        # At least check that the weights are still valid probabilities
-        assert torch.all(final_layer_weights >= 0), "All layer weights should be non-negative"
-        assert torch.all(final_layer_weights <= 1), "All layer weights should be <= 1"
-        assert abs(torch.sum(final_layer_weights).item() - 1.0) < 1e-6, \
-            "Layer weights should sum to 1"
+def test_layer_weight_updates_direction(self, base_config, sample_batch):
+    """Test that layer weights update in the expected direction based on losses."""
+    torch.manual_seed(42)
+    
+    estimator = HedgeVAMPNetEstimator(**base_config)
+    
+    # Store initial layer weights
+    initial_layer_weights = estimator.model.layer_weights.data.clone()
+    
+    # Get predictions and losses before step
+    predictions = estimator.model(sample_batch)
+    losses = [l.item() for l in estimator._compute_layer_losses(predictions)]
+    
+    # Perform optimization step
+    estimator.optimizer.step(sample_batch)
+    
+    # The layer weights should have changed (unless all losses are identical)
+    final_layer_weights = estimator.model.layer_weights.data
+    
+    # Check that weights are still valid probabilities
+    assert torch.all(final_layer_weights >= 0), "All layer weights should be non-negative"
+    assert torch.all(final_layer_weights <= 1), "All layer weights should be <= 1"
+    assert abs(torch.sum(final_layer_weights).item() - 1.0) < 1e-6, \
+        "Layer weights should sum to 1"
+    
+    # Check update direction: layer with lowest loss should have highest weight
+    min_loss_idx = losses.index(min(losses))
+    max_loss_idx = losses.index(max(losses))
+    assert final_layer_weights[min_loss_idx] > final_layer_weights[max_loss_idx], \
+        "Layer with lower loss should have higher weight after update"
