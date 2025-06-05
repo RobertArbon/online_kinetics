@@ -60,7 +60,7 @@ class AlphaRecorder(object):
         dict : Dict
             The dictionary containing training information (unused)
         """
-        current_alphas = self.estimator.get_alphas().copy()
+        current_alphas = self.estimator.get_layer_weights().copy()
         self.alphas.append(current_alphas)
 
     def get_alphas(self) -> List[np.ndarray]:
@@ -92,7 +92,7 @@ class PredictionsByLayerRecorder(object):
         self.predictions_by_layer = {}
 
         # Initialize storage for each layer
-        for layer_num in range(estimator.n_hidden_layers):
+        for layer_num in range(estimator.model.n_hidden_layers):
             self.predictions_by_layer[layer_num] = []
 
     def __call__(self, step: int, dict: Dict) -> None:
@@ -109,17 +109,17 @@ class PredictionsByLayerRecorder(object):
         with torch.no_grad():
             # Record predictions for each data tensor
             step_predictions = {
-                layer_num: [] for layer_num in range(self.estimator.n_hidden_layers)
+                layer_num: [] for layer_num in range(self.estimator.model.n_hidden_layers)
             }
 
             for x in self.data_tensors:
                 y, _ = self.estimator.forward((x, x))
-                for layer_num in range(self.estimator.n_hidden_layers):
+                for layer_num in range(self.estimator.model.n_hidden_layers):
                     result = y[layer_num].detach().cpu().numpy()
                     step_predictions[layer_num].append(result)
 
             # Store the predictions for this validation step
-            for layer_num in range(self.estimator.n_hidden_layers):
+            for layer_num in range(self.estimator.model.n_hidden_layers):
                 self.predictions_by_layer[layer_num].append(step_predictions[layer_num])
 
     def get_predictions_by_layer(self) -> Dict[int, List[np.ndarray]]:
