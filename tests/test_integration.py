@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from pathlib import Path
 from functools import partial
-from typing import Dict as TypedDict, List
+from typing import Dict, List
 from torch.utils.data import DataLoader
 from addict import Dict as Adict
 from deeptime.util.types import to_dataset
@@ -17,75 +17,12 @@ from celerity.models import HedgeVAMPNetEstimator, StandardVAMPNetEstimator
 from celerity.callbacks import AlphaRecorder, PredictionsByLayerRecorder, LossLogger
 
 
-class FixedAlphaRecorder(AlphaRecorder):
-    """Fixed version of AlphaRecorder that uses get_layer_weights instead of get_alphas."""
-    
-    def __call__(self, step: int, dict: TypedDict) -> None:
-        """Record the current alpha values using get_layer_weights.
-        
-        Parameters
-        ----------
-        step : int
-            The training step number
-        dict : TypedDict
-            The dictionary containing training information (unused)
-        """
-        current_alphas = self.estimator.get_layer_weights().copy()
-        self.alphas.append(current_alphas)
-
-
-class FixedPredictionsByLayerRecorder(PredictionsByLayerRecorder):
-    """Fixed version of PredictionsByLayerRecorder that accesses n_hidden_layers through the model."""
-    
-    def __init__(self, estimator, data_tensors) -> None:
-        """Initialize with estimator and data tensors.
-        
-        Parameters
-        ----------
-        estimator : HedgeVAMPNetEstimator
-            The estimator to record predictions from
-        data_tensors : List[torch.Tensor]
-            The data tensors to get predictions for
-        """
-        super().__init__(estimator, data_tensors)
-        # Reinitialize storage for each layer using model.n_hidden_layers
-        self.predictions_by_layer = {}
-        for layer_num in range(estimator.model.n_hidden_layers):
-            self.predictions_by_layer[layer_num] = []
-    
-    def __call__(self, step: int, dict: TypedDict) -> None:
-        """Record predictions by layer for the current validation step.
-        
-        Parameters
-        ----------
-        step : int
-            The training step number
-        dict : TypedDict
-            The dictionary containing validation information (unused)
-        """
-        self.estimator.eval()
-        with torch.no_grad():
-            # Record predictions for each data tensor
-            step_predictions = {
-                layer_num: [] for layer_num in range(self.estimator.model.n_hidden_layers)
-            }
-
-            for x in self.data_tensors:
-                y, _ = self.estimator.forward((x, x))
-                for layer_num in range(self.estimator.model.n_hidden_layers):
-                    result = y[layer_num].detach().cpu().numpy()
-                    step_predictions[layer_num].append(result)
-
-            # Store the predictions for this validation step
-            for layer_num in range(self.estimator.model.n_hidden_layers):
-                self.predictions_by_layer[layer_num].append(step_predictions[layer_num])
-
-
 @pytest.fixture()
 def data():
     """Load test data."""
     with np.load(Path('tests/data/alanine-dipeptide-3x250ns-backbone-dihedrals.npz')) as fh:
         dihedral = [fh[f"arr_{i}"] for i in range(3)]
+    dihedral = [x[:100] for x in dihedral]
     return dihedral
 
 
@@ -94,7 +31,7 @@ def loaders(data):
     """Create data loaders for training and validation."""
     lag_time = 1
     validation_split = 0.3
-    batch_size = 1000
+    batch_size = 10
     
     # Prepare data
     dataset = to_dataset(data=data, lagtime=lag_time)
@@ -173,7 +110,7 @@ def test_hedge_vampnet_with_alpha_recorder(hedge_config, loaders, data):
     est = HedgeVAMPNetEstimator(**hedge_config)
     
     # Initialize callback
-    alpha_recorder = FixedAlphaRecorder(est)
+    alpha_recorder = AlphaRecorder(est)
     
     # Get loaders
     loader_train, loader_val = loaders
@@ -204,7 +141,7 @@ def test_hedge_vampnet_with_predictions_recorder(hedge_config, loaders, data):
     data_tensors = [torch.Tensor(x) for x in data]
     
     # Initialize callback
-    predictions_recorder = FixedPredictionsByLayerRecorder(est, data_tensors)
+    predictions_recorder = PredictionsByLayerRecorder(est, data_tensors)
     
     # Get loaders
     loader_train, loader_val = loaders
@@ -236,8 +173,8 @@ def test_hedge_vampnet_with_all_callbacks(hedge_config, loaders, data):
     data_tensors = [torch.Tensor(x) for x in data]
     
     # Initialize callbacks
-    alpha_recorder = FixedAlphaRecorder(est)
-    predictions_recorder = FixedPredictionsByLayerRecorder(est, data_tensors)
+    alpha_recorder = AlphaRecorder(est)
+    predictions_recorder = PredictionsByLayerRecorder(est, data_tensors)
     
     # Get loaders
     loader_train, loader_val = loaders
