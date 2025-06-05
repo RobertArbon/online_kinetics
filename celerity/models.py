@@ -321,7 +321,8 @@ class HedgeVAMPNetModel(BaseVAMPNetModel):
         )
 
         # Layer weights (alpha) - initialized uniformly
-        initial_alpha = 1.0 / (self.n_hidden_layers + 1)
+        # initial_alpha = 1.0 / (self.n_hidden_layers + 1)
+        initial_alpha = 1.0 / (self.n_hidden_layers )
         self.layer_weights = Parameter(
             torch.full((self.n_hidden_layers,), initial_alpha),
             requires_grad=False,
