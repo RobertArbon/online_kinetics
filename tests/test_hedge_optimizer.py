@@ -184,66 +184,44 @@ class TestHedgeOptimizer:
     def test_gamma_minimum_weight_constraint(self, base_config, sample_batch):
         """Test that gamma parameter enforces minimum weight constraints."""
         torch.manual_seed(42)
+
+        # loss1, loss2, beta, gamma, alpha1, alpha2
+        cases = [(0.1, 10, 0.9, 0.5, 0.6643212250, 0.3356787750), 
+                 (0.1, 10, 0.9, 0.0, 0.7394417577, 0.2605582423), 
+                 (0.1, 10, 0.9, 1.0, 0.5, 0.5)
+                 ]
+
+        for l1, l2, beta, gamma, alpha1, alpha2 in cases: 
+            # Create estimator with specific gamma value and aggressive parameters
+            config = base_config.copy()
+            config['hedge_gamma'] = gamma  # Higher gamma for more restrictive constraint
+            config['hedge_beta'] = beta   # Aggressive decay to force weights low
+            config['n_hidden_layers'] = 2  # Ensure we have 2 layers
+            print(config) 
+            estimator = HedgeVAMPNetEstimator(**config)
+            # Store the original _update_layer_weights method
+            original_update = estimator.optimizer._update_layer_weights
+            print(estimator.model.layer_weights.data)
         
-        # Create estimator with specific gamma value and aggressive parameters
-        config = base_config.copy()
-        config['hedge_gamma'] = 0.4  # Higher gamma for more restrictive constraint
-        config['hedge_beta'] = 0.5   # Aggressive decay to force weights low
-        config['hedge_eta'] = 0.05   # Moderate learning rate
-        config['n_hidden_layers'] = 2  # Ensure we have 2 layers
+            def mock_update_with_extreme_losses(layer_losses):
+                """Mock update that simulates extreme loss differences."""
+                mock_losses = [
+                    torch.tensor(l1),  
+                    torch.tensor(l2)   
+                ]
+                original_update(mock_losses)
         
-        estimator = HedgeVAMPNetEstimator(**config)
+            # Replace the method temporarily
+            estimator.optimizer._update_layer_weights = mock_update_with_extreme_losses
         
-        # Calculate the expected minimum weight
-        min_expected_weight = config['hedge_gamma'] / config['n_hidden_layers']  # 0.4 / 2 = 0.2
-        
-        # Create a scenario that will definitely trigger the constraint
-        # by manually setting very unequal losses for different layers
-        
-        # Store the original _update_layer_weights method
-        original_update = estimator.optimizer._update_layer_weights
-        
-        def mock_update_with_extreme_losses(layer_losses):
-            """Mock update that simulates extreme loss differences."""
-            # Simulate one layer having much higher loss than others
-            mock_losses = [
-                torch.tensor(10.0),  # Very high loss for first layer
-                torch.tensor(0.1)    # Low loss for second layer
-            ]
-            original_update(mock_losses)
-        
-        # Replace the method temporarily
-        estimator.optimizer._update_layer_weights = mock_update_with_extreme_losses
-        
-        # Perform optimization steps with the mocked extreme losses
-        for _ in range(10):
+            # Perform optimization steps with the mocked extreme losses
             estimator.optimizer.step(sample_batch)
         
-        # Restore original method
-        estimator.optimizer._update_layer_weights = original_update
+            # The layer with high loss should have been constrained to the minimum
+            final_weights = estimator.model.layer_weights.data
+
+            assert torch.allclose(final_weights, torch.tensor([alpha1, alpha2])), f"{final_weights}" 
         
-        # Check that the constraint is working
-        # The layer with high loss should have been constrained to the minimum
-        final_weights = estimator.model.layer_weights.data
-        
-        # At least one weight should be close to the minimum (the constrained one)
-        min_weight_found = min(w.item() for w in final_weights)
-        
-        # The constraint should prevent weights from going too far below the theoretical minimum
-        # Due to normalization, the actual minimum might be slightly lower, but not drastically
-        effective_minimum = min_expected_weight * 0.8  # Allow some tolerance for normalization effects
-        
-        for i, weight in enumerate(final_weights):
-            assert weight.item() >= effective_minimum, \
-                f"Layer weight {i}: {weight.item()} should be >= {effective_minimum} " \
-                f"(theoretical minimum: {min_expected_weight})"
-        
-        # Verify that the constraint mechanism is actually being triggered
-        # by checking that weights are not all equal (which would indicate no constraint was needed)
-        weight_values = [w.item() for w in final_weights]
-        weight_std = torch.std(torch.tensor(weight_values)).item()
-        assert weight_std > 0.01, \
-            f"Weights should show variation due to constraint application, got std: {weight_std}"
 
     def test_layer_weights_normalization(self, base_config, sample_batch):
         """Test that layer weights are properly normalized after updates."""
@@ -324,8 +302,7 @@ class TestHedgeOptimizer:
             # Check initial layer weights are properly initialized
             assert len(estimator.model.layer_weights) == n_layers
             
-            # Layer weights are initialized as 1/(n_hidden_layers + 1), so they don't sum to 1 initially
-            expected_initial_weight = 1.0 / (n_layers + 1)
+            expected_initial_weight = 1.0 / n_layers
             for weight in estimator.model.layer_weights:
                 assert abs(weight.item() - expected_initial_weight) < 1e-6, \
                     f"Each layer weight should be {expected_initial_weight} for {n_layers} layers"
@@ -396,20 +373,25 @@ class TestHedgeOptimizer:
         """Test that layer weights update in the expected direction based on losses."""
         torch.manual_seed(42)
         
-        estimator = HedgeVAMPNetEstimator(**base_config)
+        # Create estimator with 2 hidden layers
+        config = base_config.copy()
+        config['n_hidden_layers'] = 2
+        estimator = HedgeVAMPNetEstimator(**config)
         
         # Store initial layer weights
         initial_layer_weights = estimator.model.layer_weights.data.clone()
         
-        # Get layer predictions and compute losses manually to verify direction
-        layer_predictions = estimator.model(sample_batch)
-        layer_losses = estimator._compute_layer_losses(layer_predictions)
+        # Create mock losses - different for each layer
+        mock_losses = [
+            torch.tensor(2.0, requires_grad=True),  # Higher loss for first layer
+            torch.tensor(1.0, requires_grad=True)   # Lower loss for second layer
+        ]
         
-        # Store the losses before optimization
-        initial_losses = [loss.item() for loss in layer_losses]
+        # Store the original _update_layer_weights method
+        original_update_layer_weights = estimator.optimizer._update_layer_weights
         
-        # Perform optimization step
-        estimator.optimizer.step(sample_batch)
+        # Call the update_layer_weights method directly with our mock losses
+        estimator.optimizer._update_layer_weights(mock_losses)
         
         # Get final layer weights
         final_layer_weights = estimator.model.layer_weights.data
@@ -420,39 +402,25 @@ class TestHedgeOptimizer:
         assert abs(torch.sum(final_layer_weights).item() - 1.0) < 1e-6, \
             "Layer weights should sum to 1"
         
-        # Test the core hedge algorithm behavior:
-        # Layers with higher losses should have their weights decreased more
-        # (according to the hedge update: alpha_i *= beta^(loss_i))
-        
         # Calculate weight changes
         weight_changes = final_layer_weights - initial_layer_weights
         
-        # If losses are different, verify the direction of updates
-        if len(set(f"{loss:.6f}" for loss in initial_losses)) > 1:  # Losses are not identical
-            # Find the layer with highest and lowest loss
-            max_loss_idx = initial_losses.index(max(initial_losses))
-            min_loss_idx = initial_losses.index(min(initial_losses))
-            
-            # The layer with higher loss should have a more negative weight change
-            # (or smaller positive change) compared to the layer with lower loss
-            # This is because beta^(higher_loss) < beta^(lower_loss) when beta < 1
-            
-            # After normalization, the relative ordering should be preserved:
-            # the layer with higher loss should have decreased relatively more
-            max_loss_change = weight_changes[max_loss_idx].item()
-            min_loss_change = weight_changes[min_loss_idx].item()
-            
-            assert max_loss_change < min_loss_change, \
-                f"Layer with higher loss ({initial_losses[max_loss_idx]:.6f}) should have " \
-                f"more negative weight change ({max_loss_change:.6f}) than layer with " \
-                f"lower loss ({initial_losses[min_loss_idx]:.6f}, change: {min_loss_change:.6f})"
+        # The layer with higher loss (index 0) should have a more negative weight change
+        # compared to the layer with lower loss (index 1)
+        high_loss_change = weight_changes[0].item()
+        low_loss_change = weight_changes[1].item()
         
-        # Verify that weights actually changed (unless constrained)
+        # Print the values for debugging
+        print(f"Initial weights: {initial_layer_weights}")
+        print(f"Final weights: {final_layer_weights}")
+        print(f"Weight changes: {weight_changes}")
+        print(f"High loss change: {high_loss_change}, Low loss change: {low_loss_change}")
+        
+        # The layer with higher loss should have a more negative (or less positive) weight change
+        assert high_loss_change < low_loss_change, \
+            f"Layer with higher loss (2.0) should have more negative weight change ({high_loss_change:.6f}) " \
+            f"than layer with lower loss (1.0, change: {low_loss_change:.6f})"
+        
+        # Verify that weights actually changed
         total_weight_change = torch.norm(weight_changes).item()
-        if total_weight_change < 1e-8:
-            # If weights didn't change much, it might be due to constraints or identical losses
-            # This is acceptable behavior
-            pass
-        else:
-            # If weights did change, ensure the change is consistent with hedge algorithm
-            assert total_weight_change > 0, "Layer weights should have changed during optimization"
+        assert total_weight_change > 1e-8, "Layer weights should have changed during optimization"
