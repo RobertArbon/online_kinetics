@@ -72,7 +72,7 @@ class HedgeOptimizer(Optimizer):
         """
         output_layer = self.model.lobe.output_layers[layer_idx]
         layer_weight = self.model.layer_weights[layer_idx]
-        learning_rate = self.model.hedge_eta
+        learning_rate = self.estimator.hedge_eta
 
         # Update weights and biases
         output_layer.weight.data -= (
@@ -118,7 +118,7 @@ class HedgeOptimizer(Optimizer):
             weight_grads: Accumulated weight gradients for each hidden layer
             bias_grads: Accumulated bias gradients for each hidden layer
         """
-        learning_rate = self.model.hedge_eta
+        learning_rate = self.estimator.hedge_eta
 
         for hidden_idx in range(len(weight_grads)):
             if weight_grads[hidden_idx] is not None:
@@ -139,11 +139,11 @@ class HedgeOptimizer(Optimizer):
 
             # Exponential update: alpha_i *= beta^(loss_i)
             self.model.layer_weights[layer_idx] *= torch.pow(
-                self.model.hedge_beta, loss_value
+                self.estimator.hedge_beta, loss_value
             )
 
             # Apply minimum weight constraint
-            min_weight = self.model.hedge_gamma / self.model.n_hidden_layers
+            min_weight = self.estimator.hedge_gamma / self.model.n_hidden_layers
             self.model.layer_weights[layer_idx] = torch.max(
                 self.model.layer_weights[layer_idx], min_weight
             )

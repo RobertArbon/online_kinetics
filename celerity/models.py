@@ -296,9 +296,6 @@ class HedgeVAMPNetModel(BaseVAMPNetModel):
         hidden_layer_width: int,
         output_softmax: bool = False,
         device: str = "cpu",
-        hedge_beta: float = 0.99,
-        hedge_eta: float = 0.01,
-        hedge_gamma: float = 0.1,
     ):
         super().__init__(
             input_dim=input_dim,
@@ -309,20 +306,8 @@ class HedgeVAMPNetModel(BaseVAMPNetModel):
             device=device,
         )
 
-        # Hedge algorithm parameters
-        self.hedge_beta = Parameter(torch.tensor(hedge_beta), requires_grad=False).to(
-            self.device
-        )
-        self.hedge_eta = Parameter(torch.tensor(hedge_eta), requires_grad=False).to(
-            self.device
-        )
-        self.hedge_gamma = Parameter(torch.tensor(hedge_gamma), requires_grad=False).to(
-            self.device
-        )
-
         # Layer weights (alpha) - initialized uniformly
-        # initial_alpha = 1.0 / (self.n_hidden_layers + 1)
-        initial_alpha = 1.0 / (self.n_hidden_layers )
+        initial_alpha = 1.0 / (self.n_hidden_layers)
         self.layer_weights = Parameter(
             torch.full((self.n_hidden_layers,), initial_alpha),
             requires_grad=False,
@@ -395,15 +380,23 @@ class HedgeVAMPNetEstimator(BaseVAMPNetEstimator):
             hidden_layer_width=hidden_layer_width,
             output_softmax=output_softmax,
             device=device,
-            hedge_beta=hedge_beta,
-            hedge_eta=hedge_eta,
-            hedge_gamma=hedge_gamma,
         )
 
         super().__init__(
             model=model,
             score_method=score_method,
             n_epochs=n_epochs,
+        )
+
+        # Hedge algorithm parameters
+        self.hedge_beta = Parameter(torch.tensor(hedge_beta), requires_grad=False).to(
+            self.model.device
+        )
+        self.hedge_eta = Parameter(torch.tensor(hedge_eta), requires_grad=False).to(
+            self.model.device
+        )
+        self.hedge_gamma = Parameter(torch.tensor(hedge_gamma), requires_grad=False).to(
+            self.model.device
         )
 
         # Training parameters

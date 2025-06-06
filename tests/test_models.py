@@ -111,9 +111,6 @@ class TestHedgeVAMPNetModel:
             "hidden_layer_width": 8,
             "output_softmax": False,
             "device": "cpu",
-            "hedge_beta": 0.98,
-            "hedge_eta": 0.01,
-            "hedge_gamma": 0.1,
         }
 
     @pytest.fixture
