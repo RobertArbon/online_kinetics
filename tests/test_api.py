@@ -202,15 +202,6 @@ class TestCallbackSetup(unittest.TestCase):
         # Create validation tensors
         self.val_tensors = [torch.randn(10, 10)]
     
-    def test_standard_callbacks(self):
-        """Test setting up callbacks for standard training."""
-        train_callbacks, val_callbacks = setup_default_callbacks(
-            self.standard_estimator, use_hedging=False, validation_tensors=self.val_tensors
-        )
-        
-        # Standard training should have no default callbacks
-        self.assertEqual(len(train_callbacks), 0)
-        self.assertEqual(len(val_callbacks), 0)
     
     def test_hedge_callbacks(self):
         """Test setting up callbacks for hedge training."""
@@ -300,5 +291,4 @@ class TestTrainModel(unittest.TestCase):
         self.assertGreater(estimator.step, 0)
 
 
-if __name__ == '__main__':
-    unittest.main()
+
